@@ -15,3 +15,12 @@ export interface AuthResponse {
 export interface AuthError {
   detail: string;
 }
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface RefreshResponse {
+  access_token: string;
+}

@@ -24,6 +24,27 @@ class RegisterResponse(BaseModel):
     refresh_token: str
 
 
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    user_id: str
+    email: str
+    username: str
+    access_token: str
+    refresh_token: str
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+
+class RefreshResponse(BaseModel):
+    access_token: str
+
+
 def _get_supabase_client() -> Client:
     url: str = os.environ["SUPABASE_URL"]
     key: str = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
@@ -67,6 +88,17 @@ def register(data: RegisterRequest) -> RegisterResponse:
     if user is None:
         raise HTTPException(status_code=500, detail="No se pudo crear el usuario")
 
+    user_id: str = str(user.id)
+    try:
+        client.table("profiles").upsert(
+            {"id": user_id, "username": data.username}
+        ).execute()
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500,
+            detail="No se pudo guardar el perfil de usuario",
+        ) from exc
+
     try:
         sign_in_response = client.auth.sign_in_with_password(
             {"email": data.email, "password": data.password}
@@ -79,9 +111,66 @@ def register(data: RegisterRequest) -> RegisterResponse:
         raise HTTPException(status_code=500, detail="No se pudo crear la sesión")
 
     return RegisterResponse(
-        user_id=str(user.id),
+        user_id=user_id,
         email=data.email,
         username=data.username,
         access_token=session.access_token,
         refresh_token=session.refresh_token,
     )
+
+
+@router.post("/login", response_model=LoginResponse)
+def login(data: LoginRequest) -> LoginResponse:
+    client: Client = _get_supabase_client()
+
+    try:
+        sign_in_response = client.auth.sign_in_with_password(
+            {"email": data.email, "password": data.password}
+        )
+    except AuthApiError as exc:
+        raise HTTPException(
+            status_code=400, detail="Credenciales incorrectas"
+        ) from exc
+
+    session = sign_in_response.session
+    if session is None:
+        raise HTTPException(status_code=500, detail="No se pudo crear la sesión")
+
+    user = sign_in_response.user
+    if user is None:
+        raise HTTPException(status_code=500, detail="No se pudo obtener el usuario")
+
+    profile_response = (
+        client.table("profiles")
+        .select("username")
+        .eq("id", str(user.id))
+        .execute()
+    )
+    raw_username = profile_response.data[0].get("username") if profile_response.data else None
+    username: str = raw_username if isinstance(raw_username, str) and raw_username.strip() != "" else data.email
+
+    return LoginResponse(
+        user_id=str(user.id),
+        email=data.email,
+        username=username,
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+    )
+
+
+@router.post("/refresh", response_model=RefreshResponse)
+def refresh(data: RefreshRequest) -> RefreshResponse:
+    client: Client = _get_supabase_client()
+
+    try:
+        refresh_response = client.auth.refresh_session(data.refresh_token)
+    except AuthApiError as exc:
+        raise HTTPException(
+            status_code=401, detail="Token inválido o expirado"
+        ) from exc
+
+    session = refresh_response.session
+    if session is None:
+        raise HTTPException(status_code=500, detail="No se pudo refrescar la sesión")
+
+    return RefreshResponse(access_token=session.access_token)

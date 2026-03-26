@@ -21,11 +21,13 @@ export const useAuthStore = create<AuthState>((set) => ({
 
   setAuth: (user: AuthUser, access_token: string, refresh_token: string) => {
     localStorage.setItem("ct_refresh_token", refresh_token);
+    localStorage.setItem("ct_user", JSON.stringify(user));
     set({ user, access_token, isAuthenticated: true });
   },
 
   clearAuth: () => {
     localStorage.removeItem("ct_refresh_token");
+    localStorage.removeItem("ct_user");
     set({ user: null, access_token: null, isAuthenticated: false });
   },
 }));
