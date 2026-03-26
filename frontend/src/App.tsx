@@ -1,31 +1,11 @@
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import RegisterPage from "./pages/RegisterPage";
 import LoginPage from "./pages/LoginPage";
 import ProtectedRoute from "./components/ProtectedRoute";
+import Layout from "./components/Layout";
+import SearchPage from "./pages/SearchPage";
+import MovieDetailPage from "./pages/MovieDetailPage";
 import { useInitAuth } from "./hooks/useInitAuth";
-import { useAuthStore } from "./store/authStore";
-
-function DashboardPage() {
-  const clearAuth = useAuthStore((state) => state.clearAuth);
-  const navigate = useNavigate();
-
-  function handleLogout(): void {
-    clearAuth();
-    navigate("/login");
-  }
-
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-6 bg-gray-950 text-white">
-      <h1 className="text-2xl">Dashboard — próximamente</h1>
-      <button
-        onClick={handleLogout}
-        className="rounded-lg bg-red-600 px-6 py-2.5 font-semibold text-white transition hover:bg-red-500"
-      >
-        Cerrar sesión
-      </button>
-    </div>
-  );
-}
 
 function AppRoutes() {
   const { isReady } = useInitAuth();
@@ -37,11 +17,15 @@ function AppRoutes() {
   return (
     <Routes>
       <Route element={<ProtectedRoute />}>
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route element={<Layout />}>
+          <Route path="/search" element={<SearchPage />} />
+          <Route path="/movie/:id" element={<MovieDetailPage />} />
+          <Route path="/dashboard" element={<Navigate to="/search" replace />} />
+        </Route>
       </Route>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
-      <Route path="*" element={<Navigate to="/register" replace />} />
+      <Route path="*" element={<Navigate to="/search" replace />} />
     </Routes>
   );
 }
