@@ -5,6 +5,7 @@ import ProtectedRoute from "./components/ProtectedRoute";
 import Layout from "./components/Layout";
 import SearchPage from "./pages/SearchPage";
 import MovieDetailPage from "./pages/MovieDetailPage";
+import LibraryPage from "./pages/LibraryPage";
 import { useInitAuth } from "./hooks/useInitAuth";
 
 function AppRoutes() {
@@ -20,6 +21,7 @@ function AppRoutes() {
         <Route element={<Layout />}>
           <Route path="/search" element={<SearchPage />} />
           <Route path="/movie/:id" element={<MovieDetailPage />} />
+          <Route path="/library" element={<LibraryPage />} />
           <Route path="/dashboard" element={<Navigate to="/search" replace />} />
         </Route>
       </Route>

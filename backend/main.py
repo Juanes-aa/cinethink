@@ -1,12 +1,13 @@
+from dotenv import load_dotenv
+load_dotenv()  # PRIMERO, antes de cualquier import propio
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from supabase import create_client, Client
-from dotenv import load_dotenv
 import os
 
 from routers.auth import router as auth_router
-
-load_dotenv()
+from app.routers.movies import router as movies_router
 
 app = FastAPI(title="CineThink API")
 
@@ -24,6 +25,7 @@ app.add_middleware(
 )
 
 app.include_router(auth_router)
+app.include_router(movies_router)
 
 
 def get_supabase_client() -> Client:

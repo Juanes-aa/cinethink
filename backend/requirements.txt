@@ -5,3 +5,5 @@ python-dotenv==1.2.2
 pytest==8.3.5
 httpx==0.28.1
 pytest-asyncio==0.25.3
+PyJWT==2.12.1
+cryptography==44.0.3

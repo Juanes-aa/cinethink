@@ -1,7 +1,11 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate, Navigate } from "react-router-dom";
 import type { TmdbMovieDetail } from "../types/tmdb";
 import { getMovieDetail, getDirector, getPosterUrl } from "../services/tmdb";
+import { useAuthStore } from "../store/authStore";
+import { useLibraryStore } from "../stores/libraryStore";
+import type { WatchedMoviePayload } from "../types/library";
+import WatchedModal from "../components/WatchedModal";
 
 function formatRuntime(minutes: number | null): string {
   if (minutes === null || minutes === 0) return "—";
@@ -35,6 +39,55 @@ export default function MovieDetailPage() {
   const [movie, setMovie] = useState<TmdbMovieDetail | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+
+  const token = useAuthStore((state) => state.access_token);
+  const libraryMovies = useLibraryStore((state) => state.movies);
+  const addMovie = useLibraryStore((state) => state.addMovie);
+
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [watchedMessage, setWatchedMessage] = useState<string | null>(null);
+  const [markedAsWatched, setMarkedAsWatched] = useState<boolean>(false);
+
+  const isWatched: boolean =
+    markedAsWatched || libraryMovies.some((m) => m.tmdb_id === numericId);
+
+  const handleConfirmWatched = useCallback(
+    async (note: string): Promise<void> => {
+      if (movie === null || token === null) return;
+      setIsSaving(true);
+      setWatchedMessage(null);
+
+      const posterUrl = getPosterUrl(movie.poster_path, "w500");
+      const releaseYear: number | null = movie.release_date
+        ? Number(movie.release_date.slice(0, 4))
+        : null;
+
+      const payload: WatchedMoviePayload = {
+        tmdb_id: movie.id,
+        title: movie.title,
+        poster_url: posterUrl,
+        release_year: releaseYear,
+        genre_ids: movie.genres.map((g) => g.id),
+        ...(note !== "" ? { initial_note: note } : {}),
+      };
+
+      try {
+        const result: string | undefined = await addMovie(token, payload);
+        if (result === "ALREADY_WATCHED") {
+          setWatchedMessage("Ya tienes esta película en tu lista");
+        } else {
+          setMarkedAsWatched(true);
+          setIsModalOpen(false);
+        }
+      } catch {
+        setWatchedMessage("Error al marcar la película como vista");
+      } finally {
+        setIsSaving(false);
+      }
+    },
+    [movie, token, addMovie]
+  );
 
   useEffect(() => {
     if (!isValidId) return;
@@ -180,8 +233,38 @@ export default function MovieDetailPage() {
               </ul>
             </div>
           )}
+
+          <div className="mt-2">
+            {isWatched ? (
+              <button
+                type="button"
+                disabled
+                className="rounded-lg bg-green-800/50 px-5 py-2.5 text-sm font-semibold text-green-300 cursor-not-allowed"
+              >
+                ✓ Ya vista
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => { setIsModalOpen(true); }}
+                className="rounded-lg bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-indigo-500"
+              >
+                Marcar como vista
+              </button>
+            )}
+            {watchedMessage !== null && (
+              <p className="mt-2 text-sm text-yellow-400">{watchedMessage}</p>
+            )}
+          </div>
         </div>
       </div>
+
+      <WatchedModal
+        isOpen={isModalOpen}
+        onClose={() => { setIsModalOpen(false); }}
+        onConfirm={(note: string) => { void handleConfirmWatched(note); }}
+        isLoading={isSaving}
+      />
     </div>
   );
 }

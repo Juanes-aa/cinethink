@@ -26,6 +26,13 @@ export default function Layout() {
               Buscar
             </Link>
 
+            <Link
+              to="/library"
+              className="text-sm font-medium text-gray-300 transition hover:text-white"
+            >
+              Mi biblioteca
+            </Link>
+
             <button
               type="button"
               onClick={handleLogout}
