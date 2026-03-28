@@ -7,3 +7,4 @@ httpx==0.28.1
 pytest-asyncio==0.25.3
 PyJWT==2.12.1
 cryptography==44.0.3
+cachetools==5.5.2

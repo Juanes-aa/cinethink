@@ -6,7 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.dependencies.auth import get_current_user_id
-from app.routers.movies import get_supabase_client
+from app.dependencies.supabase import get_supabase_client
 from main import app
 
 FAKE_USER_ID = "user-aaa-111"

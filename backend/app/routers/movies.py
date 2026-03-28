@@ -1,20 +1,11 @@
-import os
-from functools import lru_cache
-
 from fastapi import APIRouter, Depends, HTTPException, status
-from supabase import Client, create_client
+from supabase import Client
 
 from app.dependencies.auth import get_current_user_id
+from app.dependencies.supabase import get_supabase_client
 from app.schemas.movies import WatchedMovieCreate, WatchedMovieResponse
 
 router = APIRouter(prefix="/movies", tags=["movies"])
-
-
-@lru_cache(maxsize=1)
-def get_supabase_client() -> Client:
-    url: str = os.environ["SUPABASE_URL"]
-    key: str = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-    return create_client(url, key)
 
 
 @router.post("/watched", response_model=WatchedMovieResponse, status_code=201)

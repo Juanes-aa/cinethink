@@ -3,11 +3,12 @@ load_dotenv()  # PRIMERO, antes de cualquier import propio
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from supabase import create_client, Client
-import os
+from supabase import Client
 
 from routers.auth import router as auth_router
 from app.routers.movies import router as movies_router
+from app.routers.analysis import router as analysis_router
+from app.dependencies.supabase import get_supabase_client
 
 app = FastAPI(title="CineThink API")
 
@@ -26,12 +27,7 @@ app.add_middleware(
 
 app.include_router(auth_router)
 app.include_router(movies_router)
-
-
-def get_supabase_client() -> Client:
-    url: str = os.environ["SUPABASE_URL"]
-    key: str = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
-    return create_client(url, key)
+app.include_router(analysis_router)
 
 
 @app.get("/health")
