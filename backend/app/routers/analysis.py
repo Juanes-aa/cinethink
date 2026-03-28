@@ -1,9 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from groq import Groq
 from supabase import Client
 
 from app.dependencies.auth import get_current_user_id
+from app.dependencies.groq_client import get_groq_client
 from app.dependencies.supabase import get_supabase_client
-from app.schemas.analysis import CreateSessionRequest, SessionListResponse, SessionResponse
+from app.schemas.analysis import (
+    ConversationResponse,
+    CreateSessionRequest,
+    MessageResponse,
+    SendMessageRequest,
+    SessionListResponse,
+    SessionResponse,
+)
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -117,4 +126,127 @@ def get_session(
         status=str(row["status"]),
         started_at=row["started_at"],
         closed_at=row.get("closed_at"),
+    )
+
+
+@router.post("/sessions/{session_id}/messages", response_model=MessageResponse, status_code=201)
+def send_message(
+    session_id: str,
+    data: SendMessageRequest,
+    user_id: str = Depends(get_current_user_id),
+    client: Client = Depends(get_supabase_client),
+    groq: Groq = Depends(get_groq_client),
+) -> MessageResponse:
+    session_result = (
+        client.table("analysis_sessions")
+        .select("id, status")
+        .eq("id", session_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not session_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sesión no encontrada",
+        )
+    session: dict[str, object] = session_result.data[0]
+    if session["status"] == "closed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Sesión cerrada",
+        )
+
+    history_result = (
+        client.table("analysis_messages")
+        .select("role, content")
+        .eq("session_id", session_id)
+        .order("created_at", desc=False)
+        .execute()
+    )
+    history: list[dict[str, str]] = history_result.data
+
+    user_insert_result = (
+        client.table("analysis_messages")
+        .insert({"session_id": session_id, "role": "user", "content": data.content})
+        .execute()
+    )
+    user_row: dict[str, object] = user_insert_result.data[0]
+
+    messages: list[dict[str, str]] = [
+        {
+            "role": "system",
+            "content": (
+                "Eres un analista cinematográfico experto. Analiza películas con profundidad "
+                "intelectual, explorando temas, simbolismo, dirección, actuaciones y contexto "
+                "histórico. Sé preciso, perspicaz y estimula el pensamiento crítico del usuario."
+            ),
+        },
+        *[{"role": row["role"], "content": row["content"]} for row in history],
+        {"role": "user", "content": data.content},
+    ]
+
+    response = groq.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=messages,
+        max_tokens=1024,
+        temperature=0.7,
+    )
+    assistant_content: str = response.choices[0].message.content
+
+    assistant_insert_result = (
+        client.table("analysis_messages")
+        .insert({"session_id": session_id, "role": "assistant", "content": assistant_content})
+        .execute()
+    )
+    assistant_row: dict[str, object] = assistant_insert_result.data[0]
+
+    return MessageResponse(
+        id=assistant_row["id"],
+        session_id=assistant_row["session_id"],
+        role=assistant_row["role"],
+        content=assistant_row["content"],
+        created_at=assistant_row["created_at"],
+    )
+
+
+@router.get("/sessions/{session_id}/messages", response_model=ConversationResponse)
+def get_messages(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    client: Client = Depends(get_supabase_client),
+) -> ConversationResponse:
+    session_result = (
+        client.table("analysis_sessions")
+        .select("id, status")
+        .eq("id", session_id)
+        .eq("user_id", user_id)
+        .execute()
+    )
+    if not session_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sesión no encontrada",
+        )
+
+    messages_result = (
+        client.table("analysis_messages")
+        .select("*")
+        .eq("session_id", session_id)
+        .order("created_at", desc=False)
+        .execute()
+    )
+    rows: list[dict[str, object]] = messages_result.data
+
+    return ConversationResponse(
+        session_id=session_id,
+        messages=[
+            MessageResponse(
+                id=row["id"],
+                session_id=row["session_id"],
+                role=row["role"],
+                content=row["content"],
+                created_at=row["created_at"],
+            )
+            for row in rows
+        ],
     )
