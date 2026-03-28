@@ -49,3 +49,9 @@ class MessageResponse(BaseModel):
 class ConversationResponse(BaseModel):
     session_id: UUID
     messages: list[MessageResponse]
+
+
+class CloseSessionResponse(BaseModel):
+    id: str
+    status: str
+    closed_at: str

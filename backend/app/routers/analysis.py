@@ -1,4 +1,6 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from datetime import datetime, timezone
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, status
 from groq import Groq
 from supabase import Client
 
@@ -6,6 +8,7 @@ from app.dependencies.auth import get_current_user_id
 from app.dependencies.groq_client import get_groq_client
 from app.dependencies.supabase import get_supabase_client
 from app.schemas.analysis import (
+    CloseSessionResponse,
     ConversationResponse,
     CreateSessionRequest,
     MessageResponse,
@@ -13,6 +16,7 @@ from app.schemas.analysis import (
     SessionListResponse,
     SessionResponse,
 )
+from app.services.ai_service import extract_semantic_tags
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -127,6 +131,63 @@ def get_session(
         started_at=row["started_at"],
         closed_at=row.get("closed_at"),
     )
+
+
+@router.patch("/sessions/{session_id}/close", response_model=CloseSessionResponse)
+def close_session(
+    session_id: str,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user_id),
+    supabase: Client = Depends(get_supabase_client),
+    groq: Groq = Depends(get_groq_client),
+) -> CloseSessionResponse:
+    session_result = (
+        supabase.table("analysis_sessions")
+        .select("id, user_id, status")
+        .eq("id", session_id)
+        .execute()
+    )
+    if not session_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sesión no encontrada",
+        )
+
+    session: dict[str, object] = session_result.data[0]
+
+    if session["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado",
+        )
+
+    if session["status"] == "closed":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Sesión ya cerrada",
+        )
+
+    messages_result = (
+        supabase.table("analysis_messages")
+        .select("id")
+        .eq("session_id", session_id)
+        .eq("role", "user")
+        .execute()
+    )
+    if not messages_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="La sesión no tiene mensajes de usuario",
+        )
+
+    closed_at: str = datetime.now(timezone.utc).isoformat()
+    supabase.table("analysis_sessions").update(
+        {"status": "closed", "closed_at": closed_at}
+    ).eq("id", session_id).execute()
+
+    background_tasks.add_task(extract_semantic_tags, session_id, supabase, groq)
+
+    return CloseSessionResponse(id=session_id, status="closed", closed_at=closed_at)
 
 
 @router.post("/sessions/{session_id}/messages", response_model=MessageResponse, status_code=201)
