@@ -7,6 +7,37 @@ from supabase import Client
 logger: logging.Logger = logging.getLogger(__name__)
 
 
+def build_analysis_prompt(
+    movie_title: str,
+    movie_overview: str,
+    prior_sessions: list[dict[str, str]],
+) -> str:
+    base_prompt: str = (
+        f"Eres un analista cinematográfico experto analizando '{movie_title}'.\n"
+        f"Sinopsis: {movie_overview}\n\n"
+        "Tu rol es ser un socio de pensamiento crítico, no un reseñador. "
+        "Profundiza, no resumas. Haz preguntas que generen más preguntas. "
+        "Conecta con otras obras cuando sea relevante. "
+        "Estimula el pensamiento crítico del usuario."
+    )
+
+    if len(prior_sessions) >= 2:
+        prior_context_lines: list[str] = [
+            f"- {session['title']}: {session['main_themes']}"
+            for session in prior_sessions
+        ]
+        prior_context_block: str = (
+            "\n\n--- PELÍCULAS ANALIZADAS ANTERIORMENTE POR EL USUARIO ---\n"
+            + "\n".join(prior_context_lines)
+            + "\nCuando sea relevante y natural, menciona conexiones con estas películas.\n"
+            "No forces conexiones que no existen.\n"
+            "--- FIN DE CONTEXTO PREVIO ---"
+        )
+        return base_prompt + prior_context_block
+
+    return base_prompt
+
+
 async def extract_semantic_tags(
     session_id: str, supabase: Client, groq_client: Groq
 ) -> None:

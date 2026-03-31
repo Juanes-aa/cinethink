@@ -6,6 +6,8 @@ import Layout from "./components/Layout";
 import SearchPage from "./pages/SearchPage";
 import MovieDetailPage from "./pages/MovieDetailPage";
 import LibraryPage from "./pages/LibraryPage";
+import HistoryPage from "./pages/HistoryPage";
+import SessionDetailPage from "./pages/SessionDetailPage";
 import { useInitAuth } from "./hooks/useInitAuth";
 
 function AppRoutes() {
@@ -22,6 +24,8 @@ function AppRoutes() {
           <Route path="/search" element={<SearchPage />} />
           <Route path="/movie/:id" element={<MovieDetailPage />} />
           <Route path="/library" element={<LibraryPage />} />
+          <Route path="/history" element={<HistoryPage />} />
+          <Route path="/history/:sessionId" element={<SessionDetailPage />} />
           <Route path="/dashboard" element={<Navigate to="/search" replace />} />
         </Route>
       </Route>

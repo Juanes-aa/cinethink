@@ -16,12 +16,22 @@ SESSION_ACTIVE: dict[str, object] = {
     "id": FAKE_SESSION_ID,
     "user_id": FAKE_USER_ID,
     "status": "active",
+    "movie_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    "movies_watched": {
+        "title": "Fight Club",
+        "overview": "An insomniac office worker...",
+    },
 }
 
 SESSION_CLOSED: dict[str, object] = {
     "id": FAKE_SESSION_ID,
     "user_id": FAKE_USER_ID,
     "status": "closed",
+    "movie_id": "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+    "movies_watched": {
+        "title": "Fight Club",
+        "overview": "An insomniac office worker...",
+    },
 }
 
 INSERTED_USER_MSG: dict[str, object] = {
@@ -57,32 +67,32 @@ def _mock_groq(content: str) -> MagicMock:
 
 def _mock_supabase_send_success() -> MagicMock:
     mock: MagicMock = MagicMock()
-    session_table: MagicMock = MagicMock()
-    messages_table: MagicMock = MagicMock()
-
-    session_table.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = [
-        SESSION_ACTIVE
-    ]
-    messages_table.select.return_value.eq.return_value.order.return_value.execute.return_value.data = []
-    messages_table.insert.return_value.execute.return_value.data = [INSERTED_USER_MSG]
 
     insert_call_count: list[int] = [0]
 
-    def insert_side_effect(payload: dict[str, object]) -> MagicMock:
-        insert_call_count[0] += 1
-        result: MagicMock = MagicMock()
-        if insert_call_count[0] == 1:
-            result.execute.return_value.data = [INSERTED_USER_MSG]
-        else:
-            result.execute.return_value.data = [INSERTED_ASSISTANT_MSG]
-        return result
-
-    messages_table.insert.side_effect = insert_side_effect
-
     def table_side_effect(name: str) -> MagicMock:
+        table_mock: MagicMock = MagicMock()
         if name == "analysis_sessions":
-            return session_table
-        return messages_table
+            table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = [
+                SESSION_ACTIVE
+            ]
+            table_mock.select.return_value.eq.return_value.eq.return_value.neq.return_value.order.return_value.limit.return_value.execute.return_value.data = []
+        elif name == "analysis_messages":
+            table_mock.select.return_value.eq.return_value.order.return_value.execute.return_value.data = []
+
+            def insert_side_effect(payload: dict[str, object]) -> MagicMock:
+                insert_call_count[0] += 1
+                result: MagicMock = MagicMock()
+                if insert_call_count[0] == 1:
+                    result.execute.return_value.data = [INSERTED_USER_MSG]
+                else:
+                    result.execute.return_value.data = [INSERTED_ASSISTANT_MSG]
+                return result
+
+            table_mock.insert.side_effect = insert_side_effect
+        elif name == "semantic_tags":
+            table_mock.select.return_value.eq.return_value.eq.return_value.execute.return_value.data = []
+        return table_mock
 
     mock.table.side_effect = table_side_effect
     return mock

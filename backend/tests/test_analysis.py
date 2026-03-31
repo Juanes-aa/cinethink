@@ -79,27 +79,24 @@ def _mock_movie_not_found() -> MagicMock:
 
 def _mock_list_sessions(rows: list[dict[str, object]]) -> MagicMock:
     mock: MagicMock = MagicMock()
-    (
-        mock.table.return_value
-        .select.return_value
-        .eq.return_value
-        .order.return_value
-        .execute.return_value
-        .data
-    ) == rows
-    mock.table.return_value.select.return_value.eq.return_value.order.return_value.execute.return_value.data = rows
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        table_mock: MagicMock = MagicMock()
+        if table_name == "analysis_sessions":
+            table_mock.select.return_value.eq.return_value.order.return_value.execute.return_value.data = rows
+        elif table_name == "semantic_tags":
+            session_ids = [str(r["id"]) for r in rows]
+            table_mock.select.return_value.in_.return_value.execute.return_value.data = (
+                [{"session_id": sid} for sid in session_ids] if rows else []
+            )
+        return table_mock
+
+    mock.table.side_effect = table_side_effect
     return mock
 
 
 def _mock_get_session(rows: list[dict[str, object]]) -> MagicMock:
     mock: MagicMock = MagicMock()
-    (
-        mock.table.return_value
-        .select.return_value
-        .eq.return_value
-        .execute.return_value
-        .data
-    ) == rows
     mock.table.return_value.select.return_value.eq.return_value.execute.return_value.data = rows
     return mock
 
@@ -241,3 +238,131 @@ async def test_get_session_wrong_user() -> None:
         )
 
     assert response.status_code == 403
+
+
+# ── DELETE /analysis/sessions/{session_id} ───────────────────────────
+
+
+def _mock_delete_session_success() -> MagicMock:
+    mock: MagicMock = MagicMock()
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        table_mock: MagicMock = MagicMock()
+        if table_name == "analysis_sessions":
+            table_mock.select.return_value.eq.return_value.execute.return_value.data = [
+                {"id": FAKE_SESSION_ID, "user_id": FAKE_USER_ID}
+            ]
+            table_mock.delete.return_value.eq.return_value.execute.return_value = MagicMock()
+        else:
+            table_mock.delete.return_value.eq.return_value.execute.return_value = MagicMock()
+        return table_mock
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def _mock_delete_session_other_user() -> MagicMock:
+    mock: MagicMock = MagicMock()
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        table_mock: MagicMock = MagicMock()
+        if table_name == "analysis_sessions":
+            table_mock.select.return_value.eq.return_value.execute.return_value.data = [
+                {"id": FAKE_SESSION_ID, "user_id": OTHER_USER_ID}
+            ]
+        return table_mock
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+def _mock_delete_session_not_found() -> MagicMock:
+    mock: MagicMock = MagicMock()
+
+    def table_side_effect(table_name: str) -> MagicMock:
+        table_mock: MagicMock = MagicMock()
+        if table_name == "analysis_sessions":
+            table_mock.select.return_value.eq.return_value.execute.return_value.data = []
+        return table_mock
+
+    mock.table.side_effect = table_side_effect
+    return mock
+
+
+@pytest.mark.asyncio
+async def test_delete_session_success() -> None:
+    app.dependency_overrides[get_supabase_client] = lambda: _mock_delete_session_success()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(
+            f"/analysis/sessions/{FAKE_SESSION_ID}", headers=_auth_headers()
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"message": "Session deleted successfully"}
+
+
+@pytest.mark.asyncio
+async def test_delete_session_forbidden() -> None:
+    app.dependency_overrides[get_supabase_client] = lambda: _mock_delete_session_other_user()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(
+            f"/analysis/sessions/{FAKE_SESSION_ID}", headers=_auth_headers()
+        )
+
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
+async def test_delete_session_not_found() -> None:
+    app.dependency_overrides[get_supabase_client] = lambda: _mock_delete_session_not_found()
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.delete(
+            f"/analysis/sessions/{FAKE_SESSION_ID}", headers=_auth_headers()
+        )
+
+    assert response.status_code == 404
+
+
+# ── build_analysis_prompt tests ──────────────────────────────────────
+
+from app.services.ai_service import build_analysis_prompt
+
+
+def test_build_analysis_prompt_with_prior_sessions() -> None:
+    prior_sessions: list[dict[str, str]] = [
+        {"title": "Mulholland Drive", "main_themes": "identidad, sueño"},
+        {"title": "Stalker", "main_themes": "fe, zona, deseo"},
+    ]
+
+    result: str = build_analysis_prompt(
+        movie_title="Inception",
+        movie_overview="A thief who steals corporate secrets...",
+        prior_sessions=prior_sessions,
+    )
+
+    assert "Mulholland Drive" in result
+    assert "Stalker" in result
+    assert "PELÍCULAS ANALIZADAS ANTERIORMENTE" in result
+
+
+def test_build_analysis_prompt_without_prior_sessions() -> None:
+    result_empty: str = build_analysis_prompt(
+        movie_title="Inception",
+        movie_overview="A thief who steals corporate secrets...",
+        prior_sessions=[],
+    )
+
+    result_one: str = build_analysis_prompt(
+        movie_title="Inception",
+        movie_overview="A thief who steals corporate secrets...",
+        prior_sessions=[{"title": "Mulholland Drive", "main_themes": "identidad, sueño"}],
+    )
+
+    assert "PELÍCULAS ANALIZADAS ANTERIORMENTE" not in result_empty
+    assert "PELÍCULAS ANALIZADAS ANTERIORMENTE" not in result_one

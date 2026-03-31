@@ -15,8 +15,10 @@ from app.schemas.analysis import (
     SendMessageRequest,
     SessionListResponse,
     SessionResponse,
+    SessionSummary,
+    SessionSummaryListResponse,
 )
-from app.services.ai_service import extract_semantic_tags
+from app.services.ai_service import build_analysis_prompt, extract_semantic_tags
 
 router = APIRouter(prefix="/analysis", tags=["analysis"])
 
@@ -65,34 +67,46 @@ def create_session(
     )
 
 
-@router.get("/sessions", response_model=SessionListResponse)
+@router.get("/sessions", response_model=SessionSummaryListResponse)
 def list_sessions(
     user_id: str = Depends(get_current_user_id),
     client: Client = Depends(get_supabase_client),
-) -> SessionListResponse:
+) -> SessionSummaryListResponse:
     response = (
         client.table("analysis_sessions")
-        .select("*, movies_watched(title, tmdb_id, poster_url)")
+        .select("*, movies_watched(title, poster_url)")
         .eq("user_id", user_id)
         .order("started_at", desc=True)
         .execute()
     )
     rows: list[dict[str, object]] = response.data
-    sessions: list[SessionResponse] = [
-        SessionResponse(
-            id=row["id"],
-            user_id=row["user_id"],
-            watched_movie_id=row["movie_id"],
+
+    session_ids: list[str] = [str(row["id"]) for row in rows]
+
+    sessions_with_tags: set[str] = set()
+    if session_ids:
+        tags_response = (
+            client.table("semantic_tags")
+            .select("session_id")
+            .in_("session_id", session_ids)
+            .execute()
+        )
+        sessions_with_tags = {str(tag["session_id"]) for tag in tags_response.data}
+
+    sessions: list[SessionSummary] = [
+        SessionSummary(
+            id=str(row["id"]),
+            movie_id=str(row["movie_id"]),
             movie_title=str(row["movies_watched"]["title"]),
-            tmdb_id=int(str(row["movies_watched"]["tmdb_id"])),
-            poster_url=row["movies_watched"].get("poster_url"),
+            movie_poster_url=row["movies_watched"].get("poster_url"),
             status=str(row["status"]),
             started_at=row["started_at"],
             closed_at=row.get("closed_at"),
+            has_tags=str(row["id"]) in sessions_with_tags,
         )
         for row in rows
     ]
-    return SessionListResponse(sessions=sessions, total=len(sessions))
+    return SessionSummaryListResponse(sessions=sessions, total=len(sessions))
 
 
 @router.get("/sessions/{session_id}", response_model=SessionResponse)
@@ -200,7 +214,7 @@ def send_message(
 ) -> MessageResponse:
     session_result = (
         client.table("analysis_sessions")
-        .select("id, status")
+        .select("id, status, movie_id, movies_watched(title, overview)")
         .eq("id", session_id)
         .eq("user_id", user_id)
         .execute()
@@ -216,6 +230,38 @@ def send_message(
             status_code=status.HTTP_409_CONFLICT,
             detail="Sesión cerrada",
         )
+
+    movie_title: str = str(session["movies_watched"]["title"])
+    movie_overview: str = str(session["movies_watched"].get("overview", ""))
+
+    prior_sessions_result = (
+        client.table("analysis_sessions")
+        .select("id, movie_id, movies_watched(title)")
+        .eq("user_id", user_id)
+        .eq("status", "closed")
+        .neq("id", session_id)
+        .order("closed_at", desc=True)
+        .limit(5)
+        .execute()
+    )
+
+    prior_sessions: list[dict[str, str]] = []
+    for prior_session in prior_sessions_result.data:
+        prior_session_id: str = str(prior_session["id"])
+        prior_title: str = str(prior_session["movies_watched"]["title"])
+
+        tags_result = (
+            client.table("semantic_tags")
+            .select("tag_value")
+            .eq("session_id", prior_session_id)
+            .eq("tag_type", "temas_principales")
+            .execute()
+        )
+        if tags_result.data:
+            main_themes: str = str(tags_result.data[0]["tag_value"])
+            prior_sessions.append({"title": prior_title, "main_themes": main_themes})
+
+    system_prompt: str = build_analysis_prompt(movie_title, movie_overview, prior_sessions)
 
     history_result = (
         client.table("analysis_messages")
@@ -234,14 +280,7 @@ def send_message(
     user_row: dict[str, object] = user_insert_result.data[0]
 
     messages: list[dict[str, str]] = [
-        {
-            "role": "system",
-            "content": (
-                "Eres un analista cinematográfico experto. Analiza películas con profundidad "
-                "intelectual, explorando temas, simbolismo, dirección, actuaciones y contexto "
-                "histórico. Sé preciso, perspicaz y estimula el pensamiento crítico del usuario."
-            ),
-        },
+        {"role": "system", "content": system_prompt},
         *[{"role": row["role"], "content": row["content"]} for row in history],
         {"role": "user", "content": data.content},
     ]
@@ -311,3 +350,41 @@ def get_messages(
             for row in rows
         ],
     )
+
+
+@router.delete("/sessions/{session_id}", status_code=200)
+def delete_analysis_session(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+    supabase: Client = Depends(get_supabase_client),
+) -> dict[str, str]:
+    session_result = (
+        supabase.table("analysis_sessions")
+        .select("id, user_id")
+        .eq("id", session_id)
+        .execute()
+    )
+    if not session_result.data:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Sesión no encontrada",
+        )
+
+    session: dict[str, object] = session_result.data[0]
+    if session["user_id"] != user_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="No autorizado",
+        )
+
+    try:
+        supabase.table("semantic_tags").delete().eq("session_id", session_id).execute()
+        supabase.table("analysis_messages").delete().eq("session_id", session_id).execute()
+        supabase.table("analysis_sessions").delete().eq("id", session_id).execute()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error al eliminar la sesión",
+        )
+
+    return {"message": "Session deleted successfully"}

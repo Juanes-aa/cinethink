@@ -22,6 +22,22 @@ class SessionResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
 
+class SessionSummary(BaseModel):
+    id: str
+    movie_id: str
+    movie_title: str
+    movie_poster_url: str | None
+    status: str
+    started_at: datetime
+    closed_at: datetime | None
+    has_tags: bool
+
+
+class SessionSummaryListResponse(BaseModel):
+    sessions: list[SessionSummary]
+    total: int
+
+
 class SessionListResponse(BaseModel):
     sessions: list[SessionResponse]
     total: int

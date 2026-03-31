@@ -33,6 +33,13 @@ export default function Layout() {
               Mi biblioteca
             </Link>
 
+            <Link
+              to="/history"
+              className="text-sm font-medium text-gray-300 transition hover:text-white"
+            >
+              Historial
+            </Link>
+
             <button
               type="button"
               onClick={handleLogout}
