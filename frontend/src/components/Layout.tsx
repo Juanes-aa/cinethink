@@ -40,6 +40,13 @@ export default function Layout() {
               Historial
             </Link>
 
+            <Link
+              to="/profile"
+              className="text-sm font-medium text-gray-300 transition hover:text-white"
+            >
+              Perfil
+            </Link>
+
             <button
               type="button"
               onClick={handleLogout}

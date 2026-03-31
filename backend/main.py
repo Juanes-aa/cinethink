@@ -8,6 +8,7 @@ from supabase import Client
 from routers.auth import router as auth_router
 from app.routers.movies import router as movies_router
 from app.routers.analysis import router as analysis_router
+from app.routers.profile import router as profile_router
 from app.dependencies.supabase import get_supabase_client
 
 app = FastAPI(title="CineThink API")
@@ -28,7 +29,7 @@ app.add_middleware(
 app.include_router(auth_router)
 app.include_router(movies_router)
 app.include_router(analysis_router)
-
+app.include_router(profile_router)
 
 @app.get("/health")
 def health_check() -> dict[str, str]:

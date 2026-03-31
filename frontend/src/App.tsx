@@ -8,6 +8,7 @@ import MovieDetailPage from "./pages/MovieDetailPage";
 import LibraryPage from "./pages/LibraryPage";
 import HistoryPage from "./pages/HistoryPage";
 import SessionDetailPage from "./pages/SessionDetailPage";
+import ProfilePage from "./pages/ProfilePage";
 import { useInitAuth } from "./hooks/useInitAuth";
 
 function AppRoutes() {
@@ -26,6 +27,7 @@ function AppRoutes() {
           <Route path="/library" element={<LibraryPage />} />
           <Route path="/history" element={<HistoryPage />} />
           <Route path="/history/:sessionId" element={<SessionDetailPage />} />
+          <Route path="/profile" element={<ProfilePage />} />
           <Route path="/dashboard" element={<Navigate to="/search" replace />} />
         </Route>
       </Route>

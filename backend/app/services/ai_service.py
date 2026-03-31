@@ -1,5 +1,7 @@
 import json
 import logging
+from collections import Counter
+from datetime import datetime, timezone
 
 from groq import Groq
 from supabase import Client
@@ -112,10 +114,86 @@ async def extract_semantic_tags(
                 }
             ).execute()
 
+        session_result = (
+            supabase.table("analysis_sessions")
+            .select("user_id")
+            .eq("id", session_id)
+            .execute()
+        )
+        if session_result.data:
+            user_id: str = str(session_result.data[0]["user_id"])
+            build_user_profile(user_id, supabase)
+
     except Exception as exc:
         logger.error(
             "extract_semantic_tags: unexpected error for session %s: %s",
             session_id,
+            exc,
+        )
+        return
+
+
+def _mode(values: list[str]) -> str | None:
+    if not values:
+        return None
+    return Counter(values).most_common(1)[0][0]
+
+
+def build_user_profile(user_id: str, supabase: Client) -> None:
+    try:
+        sessions_result = (
+            supabase.table("analysis_sessions")
+            .select("id")
+            .eq("user_id", user_id)
+            .eq("status", "closed")
+            .execute()
+        )
+        if not sessions_result.data:
+            return
+
+        session_ids: list[str] = [s["id"] for s in sessions_result.data]
+        tags_result = (
+            supabase.table("semantic_tags")
+            .select("tag_type, tag_value")
+            .in_("session_id", session_ids)
+            .execute()
+        )
+
+        temas: Counter[str] = Counter()
+        directores: Counter[str] = Counter()
+        narrativas: Counter[str] = Counter()
+        nivel_filosofico_values: list[str] = []
+
+        for tag in tags_result.data:
+            if tag["tag_type"] == "temas_principales":
+                items: list[str] = json.loads(tag["tag_value"])
+                for item in items:
+                    temas[item] += 1
+            elif tag["tag_type"] == "directores_estilo_similar":
+                items = json.loads(tag["tag_value"])
+                for item in items:
+                    directores[item] += 1
+            elif tag["tag_type"] == "tipo_narrativa":
+                narrativas[tag["tag_value"]] += 1
+            elif tag["tag_type"] == "nivel_filosofico":
+                nivel_filosofico_values.append(tag["tag_value"])
+
+        profile_data: dict[str, object] = {
+            "user_id": user_id,
+            "temas_frecuentes": json.dumps(temas.most_common(10)),
+            "directores_afines": json.dumps(directores.most_common(10)),
+            "narrativa_predominante": narrativas.most_common(1)[0][0] if narrativas else None,
+            "nivel_filosofico_promedio": _mode(nivel_filosofico_values),
+            "total_sesiones_analizadas": len(session_ids),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+        supabase.table("user_profile").upsert(profile_data, on_conflict="user_id").execute()
+
+    except Exception as exc:
+        logger.error(
+            "build_user_profile: unexpected error for user %s: %s",
+            user_id,
             exc,
         )
         return
