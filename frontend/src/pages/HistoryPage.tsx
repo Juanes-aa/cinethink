@@ -4,11 +4,19 @@ import { useAuthStore } from '../store/authStore'
 import { getSessions, deleteSession } from '../api/analysis'
 import type { SessionSummary } from '../types/analysis'
 
-const dateFormatter = new Intl.DateTimeFormat('es-ES', {
+const dateFormatter = new Intl.DateTimeFormat('es-CO', {
   day: 'numeric',
   month: 'short',
   year: 'numeric',
 })
+
+function getInitials(title: string): string {
+  return title
+    .split(' ')
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() ?? '')
+    .join('')
+}
 
 export default function HistoryPage() {
   const token = useAuthStore((state) => state.access_token)
@@ -17,6 +25,7 @@ export default function HistoryPage() {
   const [sessions, setSessions] = useState<SessionSummary[]>([])
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
+  const [fetchTrigger, setFetchTrigger] = useState<number>(0)
 
   useEffect(() => {
     async function fetchSessions(): Promise<void> {
@@ -24,32 +33,33 @@ export default function HistoryPage() {
 
       try {
         setLoading(true)
+        setError(null)
         const data = await getSessions(token)
         const sorted = [...data].sort(
           (a, b) => new Date(b.started_at).getTime() - new Date(a.started_at).getTime()
         )
         setSessions(sorted)
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error desconocido')
+      } catch {
+        setError('Error al cargar el historial.')
       } finally {
         setLoading(false)
       }
     }
 
     void fetchSessions()
-  }, [token])
+  }, [token, fetchTrigger])
 
   async function handleDelete(sessionId: string): Promise<void> {
     if (!token) return
 
-    const confirmed = window.confirm('¿Estás seguro de que deseas eliminar esta sesión?')
+    const confirmed = window.confirm('¿Eliminar esta sesión? Esta acción no se puede deshacer.')
     if (!confirmed) return
 
     try {
       await deleteSession(sessionId, token)
       setSessions((prev) => prev.filter((s) => s.id !== sessionId))
-    } catch (err) {
-      alert(err instanceof Error ? err.message : 'Error al eliminar')
+    } catch {
+      alert('Error al eliminar la sesión. Intenta de nuevo.')
     }
   }
 
@@ -61,8 +71,20 @@ export default function HistoryPage() {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8">
         <h1 className="mb-6 text-2xl font-bold">Historial de análisis</h1>
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+        <div className="space-y-4">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className="flex animate-pulse items-center gap-4 rounded-lg border border-gray-700 bg-gray-800 p-4"
+            >
+              <div className="h-20 w-14 flex-shrink-0 rounded bg-gray-700" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-48 rounded bg-gray-700" />
+                <div className="h-3 w-32 rounded bg-gray-700" />
+                <div className="h-5 w-16 rounded bg-gray-700" />
+              </div>
+            </div>
+          ))}
         </div>
       </div>
     )
@@ -72,7 +94,14 @@ export default function HistoryPage() {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8">
         <h1 className="mb-6 text-2xl font-bold">Historial de análisis</h1>
-        <p className="text-red-400">{error}</p>
+        <p className="mb-4 text-red-400">Error al cargar el historial.</p>
+        <button
+          type="button"
+          onClick={() => setFetchTrigger((n) => n + 1)}
+          className="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white transition hover:bg-indigo-500"
+        >
+          Reintentar
+        </button>
       </div>
     )
   }
@@ -82,14 +111,12 @@ export default function HistoryPage() {
       <div className="mx-auto max-w-4xl px-4 py-8">
         <h1 className="mb-6 text-2xl font-bold">Historial de análisis</h1>
         <div className="rounded-lg border border-gray-700 bg-gray-800 p-8 text-center">
-          <p className="mb-4 text-gray-300">
-            Aún no has analizado ninguna película. Ve a tu biblioteca para empezar.
-          </p>
+          <p className="mb-4 text-gray-300">Aún no has analizado ninguna película.</p>
           <Link
             to="/library"
             className="inline-block rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white transition hover:bg-indigo-500"
           >
-            Ir a mi biblioteca
+            Ir a tu biblioteca
           </Link>
         </div>
       </div>
@@ -117,13 +144,13 @@ export default function HistoryPage() {
             <div className="h-20 w-14 flex-shrink-0 overflow-hidden rounded bg-gray-700">
               {session.movie_poster_url ? (
                 <img
-                  src={`https://image.tmdb.org/t/p/w92${session.movie_poster_url}`}
+                  src={session.movie_poster_url}
                   alt={session.movie_title}
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <div className="flex h-full w-full items-center justify-center text-xs text-gray-500">
-                  Sin imagen
+                <div className="flex h-full w-full items-center justify-center text-sm font-bold text-gray-400">
+                  {getInitials(session.movie_title)}
                 </div>
               )}
             </div>
@@ -144,7 +171,7 @@ export default function HistoryPage() {
                   {session.status === 'active' ? 'Activa' : 'Cerrada'}
                 </span>
                 {session.has_tags && (
-                  <span className="inline-block rounded bg-indigo-900 px-2 py-0.5 text-xs font-medium text-indigo-300">
+                  <span className="inline-block rounded bg-blue-900 px-2 py-0.5 text-xs font-medium text-blue-300">
                     Con etiquetas
                   </span>
                 )}

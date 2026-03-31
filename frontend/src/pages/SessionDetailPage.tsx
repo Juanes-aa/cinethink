@@ -1,13 +1,10 @@
 import { useEffect, useState } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 import { getSessionMessages, getSessions } from '../api/analysis'
 import type { AnalysisMessage, SessionSummary } from '../types/analysis'
 
-const dateFormatter = new Intl.DateTimeFormat('es-ES', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
+const timeFormatter = new Intl.DateTimeFormat('es-CO', {
   hour: '2-digit',
   minute: '2-digit',
 })
@@ -21,6 +18,7 @@ export default function SessionDetailPage() {
   const [session, setSession] = useState<SessionSummary | null>(null)
   const [loading, setLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
+  const [fetchTrigger, setFetchTrigger] = useState<number>(0)
 
   useEffect(() => {
     async function fetchData(): Promise<void> {
@@ -28,6 +26,7 @@ export default function SessionDetailPage() {
 
       try {
         setLoading(true)
+        setError(null)
 
         const [messagesData, sessionsData] = await Promise.all([
           getSessionMessages(sessionId, token),
@@ -40,15 +39,15 @@ export default function SessionDetailPage() {
         if (currentSession) {
           setSession(currentSession)
         }
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Error desconocido')
+      } catch {
+        setError('Error al cargar la conversación.')
       } finally {
         setLoading(false)
       }
     }
 
     void fetchData()
-  }, [token, sessionId])
+  }, [token, sessionId, fetchTrigger])
 
   function handleContinueConversation(): void {
     if (session) {
@@ -59,8 +58,17 @@ export default function SessionDetailPage() {
   if (loading) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
-        <div className="flex items-center justify-center py-12">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
+        <div className="mb-6 h-5 w-32 animate-pulse rounded bg-gray-700" />
+        <div className="space-y-4">
+          {[0, 1, 2].map((i) => (
+            <div
+              key={i}
+              className={`animate-pulse rounded-lg p-4 bg-gray-800 ${i % 2 === 0 ? 'mr-8' : 'ml-8'}`}
+            >
+              <div className="mb-2 h-3 w-24 rounded bg-gray-700" />
+              <div className="h-4 w-full rounded bg-gray-700" />
+            </div>
+          ))}
         </div>
       </div>
     )
@@ -69,36 +77,45 @@ export default function SessionDetailPage() {
   if (error) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
-        <Link
-          to="/history"
+        <button
+          type="button"
+          onClick={() => navigate('/history')}
           className="mb-4 inline-flex items-center text-sm text-gray-400 hover:text-white"
         >
           ← Volver al historial
-        </Link>
-        <p className="text-red-400">{error}</p>
+        </button>
+        <p className="mb-4 text-red-400">Error al cargar la conversación.</p>
+        <button
+          type="button"
+          onClick={() => setFetchTrigger((n) => n + 1)}
+          className="rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white transition hover:bg-indigo-500"
+        >
+          Reintentar
+        </button>
       </div>
     )
   }
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
-      <Link
-        to="/history"
+      <button
+        type="button"
+        onClick={() => navigate('/history')}
         className="mb-4 inline-flex items-center text-sm text-gray-400 hover:text-white"
       >
         ← Volver al historial
-      </Link>
+      </button>
 
       {session && (
         <div className="mb-6">
           <h1 className="text-2xl font-bold">{session.movie_title}</h1>
           {session.status === 'active' && (
-            <div className="mt-4 rounded-lg border border-green-800 bg-green-900/30 p-4">
-              <p className="mb-3 text-green-300">Esta sesión está activa.</p>
+            <div className="mt-4 rounded-lg border border-yellow-700 bg-yellow-900/30 p-4">
+              <p className="mb-3 text-yellow-300">Esta sesión está activa.</p>
               <button
                 type="button"
                 onClick={handleContinueConversation}
-                className="rounded-lg bg-green-600 px-4 py-2 font-medium text-white transition hover:bg-green-500"
+                className="rounded-lg bg-yellow-600 px-4 py-2 font-medium text-white transition hover:bg-yellow-500"
               >
                 Continuar conversación
               </button>
@@ -126,7 +143,7 @@ export default function SessionDetailPage() {
                 {message.role === 'user' ? 'Tú' : 'CineThink'}
               </span>
               <span className="text-xs text-gray-500">
-                {dateFormatter.format(new Date(message.created_at))}
+                {timeFormatter.format(new Date(message.created_at))}
               </span>
             </div>
             <p className="whitespace-pre-wrap text-gray-200">{message.content}</p>
